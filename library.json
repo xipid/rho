@@ -1,0 +1,66 @@
+{
+  "name": "rho",
+  "version": "1.0.0",
+  "description": "Composable networking primitives: blazing-fast Server/Client (QUIC alternative), trie-based Router (IP/BGP replacement), BFT name resolution, 0-RTT reconnection, AEAD encryption — runs on ESP32 and bare metal.",
+  "keywords": [
+    "networking",
+    "esp32",
+    "udp",
+    "game-networking",
+    "quic-alternative",
+    "routing",
+    "tunnel",
+    "encryption",
+    "0-rtt",
+    "iot",
+    "server",
+    "client",
+    "gateway",
+    "bft",
+    "mesh"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xipid/rho.git"
+  },
+  "homepage": "https://github.com/xipid/rho",
+  "authors": [
+    {
+      "name": "Xi (Abderrahmene MERZOUG)",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": [
+    "arduino",
+    "espidf"
+  ],
+  "platforms": [
+    "espressif32",
+    "linux_x86_64",
+    "native"
+  ],
+  "dependencies": {
+    "xipid/xic": "^1.0.0"
+  },
+  "build": {
+    "flags": [
+      "-Iinclude",
+      "-O3"
+    ],
+    "srcFilter": [
+      "+<include/>"
+    ]
+  },
+  "export": {
+    "include": [
+      "include/*"
+    ],
+    "exclude": [
+      "build",
+      "dev",
+      "tests",
+      "docs"
+    ]
+  }
+}
