@@ -107,7 +107,7 @@ Rho is header-only. CMake automatically fetches [Xi](https://github.com/xipid/xi
 
 📖 **[Read the Docs](https://xrho.gitbook.io/rho/docs/1-introduction)** — Architecture deep-dives, API references, and usage guides
 
-💬 **[Join the Discord](https://discord.gg/xxxxxxxxxx)** — Ask questions, share projects, contribute
+💬 **[Join the Discord](https://discord.gg/s7Rg4DHuej)** — Ask questions, share projects, contribute
 
 ---
 
