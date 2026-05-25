@@ -18,6 +18,7 @@ public:
   bool acceptsInsecure = false;
 
   Sec::KeyPair keypair;
+  Collection::Array<Sec::KeyPair> keypairHistory;
   Collection::Array<Tunnel*> clients; // Was "tunnels"
 
   Func<void(Cart&)> onProbeCallback;
@@ -87,7 +88,13 @@ public:
   // announce — reply to a probe with our public key
   // -----------------------------------------------------------------------
   void announce(Cart& c) {
-    if (!station) return;
+    Station* replyStation = station;
+    if (c.meta.has(9999)) {
+      void* ptr = nullptr;
+      sscanf(c.meta.get(9999)->c_str(), "%p", &ptr);
+      if (ptr) replyStation = (Station*)ptr;
+    }
+    if (!replyStation) return;
     Cart reply;
     reply.isSecure = false;
     reply.rail = c.rail;
@@ -112,7 +119,7 @@ public:
     if (c.meta.has(Meta::SocketPath)) {
       reply.meta.put(Meta::SocketPath, *c.meta.get(Meta::SocketPath));
     }
-    station->push(reply);
+    replyStation->push(reply);
   }
 
   void disconnect(const Map<u64, String>& meta, Tunnel& client) {
@@ -142,10 +149,22 @@ public:
     }
     for (usz i = 0; i < clients.size(); i++) {
       clients[i]->update();
+      if (clients[i]->isDestroyed) {
+        Tunnel* dead = clients[i];
+        clients.splice(i, 1);
+        delete dead;
+        --i;
+      }
     }
   }
 
   void handleCart(Cart& c) {
+    printf("[DEBUG] Server::handleCart called! isSecure: %s, hasMeta: %s, cmd: %d, rail: %u\n",
+           c.isSecure ? "true" : "false",
+           c.hasMeta ? "true" : "false",
+           c.meta.has(Meta::Command) ? (int)(*c.meta.get(Meta::Command))[0] : -1,
+           (unsigned int)c.rail);
+
     if (c.isSecure) {
       // Try to route to existing tunnel by address or rail
       for (usz i = 0; i < clients.size(); i++) {
@@ -254,11 +273,43 @@ private:
       isNew = true;
     }
 
+    bool decrypted = false;
     if (clientEphemeralPtr && !clientEphemeralPtr->isEmpty()) {
+      // Try current keypair
       clientTunnel->enableSecureX(*clientEphemeralPtr, keypair);
+      if (clientTunnel->receive(c.payload)) {
+        decrypted = true;
+        // Rotate keypair after successful upgrade
+        if (keypairHistory.size() >= 64) {
+          keypairHistory.splice(0, 1);
+        }
+        keypairHistory.push(keypair);
+        keypair = Sec::generateKeyPair();
+      } else {
+        // Try keypairHistory (reverse order: newest first)
+        for (long long idx = (long long)keypairHistory.size() - 1; idx >= 0; --idx) {
+          clientTunnel->ephemeralKeypair = keypairHistory[(usz)idx];
+          clientTunnel->enableSecureX(*clientEphemeralPtr, keypairHistory[(usz)idx]);
+          if (clientTunnel->receive(c.payload)) {
+            decrypted = true;
+            break;
+          }
+        }
+      }
+      if (!decrypted) {
+        printf("[DEBUG] Server upgrade decryption failed! client ephemeral length: %zu, current key: %s, history size: %zu\n",
+               clientEphemeralPtr->length(),
+               keypair.publicKey.length() == 32 ? "valid" : "invalid",
+               keypairHistory.size());
+      }
     } else if (acceptsInsecure) {
       clientTunnel->enableWindowing();
-    } else {
+      if (clientTunnel->receive(c.payload)) {
+        decrypted = true;
+      }
+    }
+
+    if (!decrypted) {
       if (isNew) {
         clients.pop();
         delete clientTunnel;
@@ -273,47 +324,42 @@ private:
       gotPacket = true;
     });
 
-    if (clientTunnel->receive(c.payload)) {
-      // Hook the tunnel — copy rail, copy source/target info
-      if (c.isAddressed) {
-        clientTunnel->hook(*station, c.rail, c.source);
-      } else if (c.meta.has(Meta::Source)) {
-        clientTunnel->hook(*station, c.rail, *c.meta.get(Meta::Source));
-      } else {
-        clientTunnel->hook(*station, c.rail);
-      }
-
-      if (onUpgradeCallback.isValid()) {
-        onUpgradeCallback(firstPacket, *clientTunnel, c);
-      } else if (onPacketCallback.isValid() && gotPacket) {
-        onPacketCallback(firstPacket, *clientTunnel, c);
-      }
-
-      clientTunnel->onPacket([this, clientTunnel](Packet p) {
-        if (onPacketCallback.isValid()) {
-          onPacketCallback(p, *clientTunnel, Cart());
-        }
-      });
-
-      clientTunnel->onDisconnect([this, clientTunnel](Map<u64, String> reason) {
-        if (onDisconnectCallback.isValid()) {
-          onDisconnectCallback(reason, *clientTunnel, Cart());
-        }
-        for (usz i = 0; i < clients.size(); i++) {
-          if (clients[i] == clientTunnel) {
-            clients.splice(i, 1);
-            break;
-          }
-        }
-        clientTunnel->destroy();
-        delete clientTunnel;
-      });
-    } else {
-      if (isNew) {
-        clients.pop();
-        delete clientTunnel;
-      }
+    // Make sure we hook the tunnel after successful decryption
+    Station* targetStation = station;
+    if (c.meta.has(9999)) {
+      void* ptr = nullptr;
+      sscanf(c.meta.get(9999)->c_str(), "%p", &ptr);
+      if (ptr) targetStation = (Station*)ptr;
     }
+    if (c.isAddressed) {
+      clientTunnel->hook(*targetStation, c.rail, c.source);
+    } else if (c.meta.has(Meta::Source)) {
+      clientTunnel->hook(*targetStation, c.rail, *c.meta.get(Meta::Source));
+    } else {
+      clientTunnel->hook(*targetStation, c.rail);
+    }
+
+    printf("[DEBUG] Server::_handleUpgrade: decrypted=%d, onUpgradeCallback.isValid()=%d\n",
+           decrypted, onUpgradeCallback.isValid());
+
+    if (onUpgradeCallback.isValid()) {
+      onUpgradeCallback(firstPacket, *clientTunnel, c);
+    } else if (onPacketCallback.isValid() && gotPacket) {
+      onPacketCallback(firstPacket, *clientTunnel, c);
+    }
+
+    clientTunnel->onPacket([this, clientTunnel](Packet p) {
+      if (onPacketCallback.isValid()) {
+        onPacketCallback(p, *clientTunnel, Cart());
+      }
+    });
+
+    clientTunnel->onDisconnect([this, clientTunnel](Map<u64, String> reason) {
+      if (onDisconnectCallback.isValid()) {
+        onDisconnectCallback(reason, *clientTunnel, Cart());
+      }
+      clientTunnel->destroy();
+    });
   }
 };
 

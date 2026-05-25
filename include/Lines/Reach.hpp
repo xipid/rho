@@ -186,16 +186,12 @@ private:
       }
       return false; // Not enough defaults
     }
-    a = available[Xi::millis() % available.size()];
+    usz aIdx = Xi::millis() % available.size();
     // Pick b != a
     usz offset = 1 + (Xi::millis() / 7) % (available.size() - 1);
-    usz bIdx = (a + offset) % available.size();
-    // Map back to available indices
-    // Actually a and b are already indices into `available`, need to map to defaults
-    // Let me redo this properly:
-    usz idxA = a;
+    usz bIdx = (aIdx + offset) % available.size();
+    a = available[aIdx];
     b = available[bIdx];
-    a = available[idxA];
     return true;
   }
 

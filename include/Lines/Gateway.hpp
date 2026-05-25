@@ -33,6 +33,7 @@ public:
 
   // Hooked stations (where this gateway operates)
   Array<Station*> hookedStations;
+  Station* activeIncomingStation = nullptr;
 
   // Unauthed forwarding (for constrained IoT devices)
   bool unauthed = false;
@@ -98,8 +99,17 @@ public:
 
     // Listen for incoming carts for routing
     station.onCart([this, &station](Cart& c) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%p", (void*)&station);
+      c.meta.put(9999, buf);
+      c.hasMeta = true;
+
+      activeIncomingStation = &station;
       _handleIncomingCart(c, &station);
-      server.handleCart(c); // Pass to server for Probes/Upgrades
+      if (!c.isAddressed) {
+        server.handleCart(c); // Pass to server for Probes/Upgrades
+      }
+      activeIncomingStation = nullptr;
     });
 
     // Set up server callbacks
@@ -132,6 +142,14 @@ public:
     Station* st = new Station();
     st->name = String("Port-") + String((long long)port);
     router.hook(st, portAddr);
+
+    st->onCartPushed([this, portAddr](Cart& c2) {
+      if (c2.source.size() == 0) {
+        c2.source = portAddr;
+      }
+      c2.isAddressed = true;
+      router.route(c2);
+    });
 
     BoundPort bp;
     bp.port = port;
@@ -336,7 +354,7 @@ public:
     router.destroy();
   }
 
-private:
+protected:
   void _handleIncomingCart(Cart& c, Station* originStation) {
     // Unauthed forwarding check
     if (unauthed && !c.isSecure && c.hasMeta) {
@@ -386,6 +404,7 @@ private:
   }
 
   void _handleUpgrade(Packet& pkt, Tunnel& tunnel, Cart& cart) {
+    printf("[DEBUG] Gateway::_handleUpgrade called! onUpgradeCallback.isValid()=%d\n", onUpgradeCallback.isValid());
     RoutingEntry* result = nullptr;
 
     if (onUpgradeCallback.isValid()) {
@@ -398,10 +417,14 @@ private:
       String derivedKey = Sec::kdf(tunnel.key, "GatewayStation", 32);
       sessStation->enableSecurity(derivedKey);
       sessStation->name = "GW-Session";
+      sessStation->onCart([this](Cart& c) {
+        _handleIncomingCart(c, nullptr);
+      });
 
       // Hook session station to push through our hooked station
-      if (hookedStations.size() > 0) {
-        sessStation->hook(*hookedStations[0], cart.rail);
+      Station* targetSt = activeIncomingStation ? activeIncomingStation : (hookedStations.size() > 0 ? hookedStations[0] : nullptr);
+      if (targetSt) {
+        sessStation->hook(*targetSt, cart.rail);
       }
 
       Resource::NumericalAddress childAddr = router.generate(address);
@@ -465,6 +488,7 @@ private:
           }
         }
       });
+      delete result;
     }
 
     if (onReadyCallback.isValid()) {

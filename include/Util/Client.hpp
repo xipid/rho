@@ -19,6 +19,7 @@ public:
   Sec::KeyPair keypair;
   Tunnel* tunnel = nullptr;
   u32 rail = 0;
+  String password;
 
   bool hasServerAddr = false;
   Resource::NumericalAddress serverAddr;
@@ -90,7 +91,11 @@ public:
       tunnel->unhookAll();
     }
     if (station) {
-      station->cartListener = Func<void(Cart&)>();
+      if (rail != 0) {
+        station->removeRailListener(rail);
+      } else {
+        station->cartListener = Func<void(Cart&)>();
+      }
       station = nullptr;
     }
     // Tunnel stays alive — key, nonces, everything preserved.
@@ -153,6 +158,10 @@ public:
 
     readyTriggered = false;
     _needsUpgradeMeta = true;
+
+    // Send a dummy packet to force metadata flush immediately
+    push(Packet(String(), 1));
+
     tunnel->onPacket([this](Packet p) {
       if (!readyTriggered) {
         readyTriggered = true;
@@ -198,6 +207,9 @@ public:
         String cmdVal; cmdVal.push(2); // Upgrade command
         c.meta.put(Meta::Command, cmdVal);
         c.meta.put(Meta::PublicKey, keypair.publicKey);
+        if (!password.isEmpty()) {
+          c.meta.put(Meta::Password, password);
+        }
         c.hasMeta = true;
         _needsUpgradeMeta = false;
       }
@@ -217,6 +229,9 @@ public:
         String cmdVal; cmdVal.push(2); // Upgrade command
         cart.meta.put(Meta::Command, cmdVal);
         cart.meta.put(Meta::PublicKey, keypair.publicKey);
+        if (!password.isEmpty()) {
+          cart.meta.put(Meta::Password, password);
+        }
         cart.hasMeta = true;
         _needsUpgradeMeta = false;
       }
@@ -240,6 +255,9 @@ public:
   void update() {
     if (station) {
       station->update();
+    }
+    if (_needsUpgradeMeta && tunnel && tunnel->readyToSend()) {
+      pushCart();
     }
     if (tunnel) {
       tunnel->update();
@@ -335,9 +353,15 @@ private:
 
   void _setupStationListener() {
     if (!station) return;
-    station->onCart([this](Cart& c) {
-      handleAnnounce(c);
-    });
+    if (rail != 0) {
+      station->addRailListener(rail, [this](Cart& c) {
+        handleAnnounce(c);
+      });
+    } else {
+      station->onCart([this](Cart& c) {
+        handleAnnounce(c);
+      });
+    }
   }
 };
 

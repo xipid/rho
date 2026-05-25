@@ -338,7 +338,8 @@ public:
     } else if (c.isSecure && !isSecure) {
       // Pass directly to onCart, user drops it if they want
     } else if (!c.isSecure && isSecure) {
-      return; // Drop unencrypted cart arriving on a secure station
+      push(c);
+      return;
     }
     
     lastRecvUS = Xi::micros();

@@ -1,13 +1,13 @@
 # Summary
 
-* [Introduction](../README.md)
+* [What is Rho?](1-introduction/README.md)
 
 ## Getting Started
 
-* [What is Rho?](1-introduction/README.md)
 * [Philosophy](1-introduction/philosophy.md)
 * [Architecture](1-introduction/architecture.md)
 * [Building & Integration](1-introduction/building.md)
+
 
 ## Rho Tunnel
 

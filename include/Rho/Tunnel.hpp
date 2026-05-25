@@ -55,6 +55,13 @@ using PacketListener = Xi::Func<void(Packet)>;
 using MapListener = Xi::Func<void(Xi::Map<u64, Xi::String>)>;
 using VoidListener = Xi::Func<void()>;
 
+struct Fragment {
+  u64 bID = 0;
+  usz parseIndex = 0;
+  u8 status = 0;
+  Xi::String payload;
+};
+
 class Tunnel {
 public:
   Xi::String name = "Tunnel";
@@ -102,6 +109,13 @@ public:
     lastSentNonce = 0;
     lastReceivedNonce = 0;
     receiveWindowMask = 0;
+
+    _nextSentSeq.clear();
+    _nextSentUnorderedID.clear();
+    _expectedRecvSeq.clear();
+    _orderQueue.clear();
+    _reassemblyQueue.clear();
+
     unhookAll();
   }
 
@@ -129,6 +143,13 @@ public:
     lastReceivedNonce = 0;
     receiveWindowMask = 0;
     _outbox.clear();
+
+    _nextSentSeq.clear();
+    _nextSentUnorderedID.clear();
+    _expectedRecvSeq.clear();
+    _orderQueue.clear();
+    _reassemblyQueue.clear();
+
     _updateNextHeartbeatInterval();
   }
 
@@ -138,6 +159,12 @@ public:
     lastReceivedNonce = 0;
     receiveWindowMask = 0;
     _outbox.clear();
+
+    _nextSentSeq.clear();
+    _nextSentUnorderedID.clear();
+    _expectedRecvSeq.clear();
+    _orderQueue.clear();
+    _reassemblyQueue.clear();
   }
 
   void enableSecureX(const Xi::String& theirPublic, const Sec::KeyPair& ourKeypair) {
@@ -257,6 +284,21 @@ public:
   void onReady(VoidListener cb) { _readyListener = Xi::Move(cb); }
 
   void push(Packet pkt) {
+    if (isWindowed) {
+      if (!pkt.bypassHOL) {
+        u64 seq = _nextSentSeq.has(pkt.channel) ? *_nextSentSeq.get(pkt.channel) : 0;
+        seq++;
+        pkt.id = seq;
+        _nextSentSeq.put(pkt.channel, seq);
+      } else {
+        u64 seq = _nextSentUnorderedID.has(pkt.channel) ? *_nextSentUnorderedID.get(pkt.channel) : (1ULL << 60);
+        seq++;
+        pkt.id = seq;
+        _nextSentUnorderedID.put(pkt.channel, seq);
+      }
+    } else {
+      pkt.id = 0;
+    }
     _outbox.push(pkt);
   }
   void push(Xi::String s, u64 c = 1) { push(Packet(s, c)); }
@@ -332,8 +374,9 @@ public:
       content = plain.substring(pAt, plain.length());
     }
     
+    usz parseIdx = 0;
     if (single) {
-      _parsePacket(content);
+      _parsePacket(content, bID, parseIdx++);
     } else {
       usz sAt = 0;
       while (sAt < content.length()) {
@@ -342,7 +385,7 @@ public:
         sAt += res.bytes;
         u64 pkL = (u64)res.value;
         if (sAt + (usz)pkL > content.length()) break;
-        _parsePacket(content.substring(sAt, sAt + (usz)pkL));
+        _parsePacket(content.substring(sAt, sAt + (usz)pkL), bID, parseIdx++);
         sAt += (usz)pkL;
       }
     }
@@ -428,7 +471,11 @@ private:
   Xi::Array<InflightBundle> _priorityResendQueue;
   usz _resendPosition = 0;
   Xi::Array<u64> _droppedBundles;
-  Xi::Map<u64, Xi::String> _reassemblyBuffer;
+  Xi::Map<Xi::String, Xi::Array<Fragment>> _reassemblyQueue;
+  Xi::Map<u64, u64> _nextSentSeq;
+  Xi::Map<u64, u64> _nextSentUnorderedID;
+  Xi::Map<u64, u64> _expectedRecvSeq;
+  Xi::Map<u64, Xi::Array<Packet>> _orderQueue;
   Xi::Array<Packet> _outbox;
 
   PacketListener _packetListener;
@@ -447,7 +494,7 @@ private:
     nextHeartbeatInterval = (u64)val;
   }
 
-  void _parsePacket(const Xi::String &raw) {
+  void _parsePacket(const Xi::String &raw, u64 bID, usz parseIdx) {
     usz cursor = 0;
     u8 header = raw[cursor++];
     Packet p;
@@ -480,7 +527,138 @@ private:
     }
     if (cursor < raw.length())
       p.payload = raw.substring(cursor, raw.length());
-    _dispatchPacket(p);
+    _handleFragmentAndDeliver(p, bID, parseIdx);
+  }
+
+  void _handleFragmentAndDeliver(const Packet &p, u64 bID, usz parseIdx) {
+    if (p.fragmentStatus == 0) {
+      _deliverOrQueue(p);
+    } else {
+      String key = String((long long)p.channel) + "_" + String((long long)p.fragmentStartID);
+      Array<Fragment>* frags = _reassemblyQueue.get(key);
+      if (!frags) {
+        Array<Fragment> newFrags;
+        _reassemblyQueue.put(key, Move(newFrags));
+        frags = _reassemblyQueue.get(key);
+      }
+
+      bool duplicate = false;
+      for (usz i = 0; i < frags->size(); ++i) {
+        if ((*frags)[i].bID == bID && (*frags)[i].parseIndex == parseIdx) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (duplicate) return;
+
+      Fragment newFrag;
+      newFrag.bID = bID;
+      newFrag.parseIndex = parseIdx;
+      newFrag.status = p.fragmentStatus;
+      newFrag.payload = p.payload;
+      frags->push(Move(newFrag));
+
+      // Sort fragments by bID, then by parseIndex
+      for (usz i = 1; i < frags->size(); ++i) {
+        Fragment keyFrag = (*frags)[i];
+        long long j = (long long)i - 1;
+        while (j >= 0 && ((*frags)[j].bID > keyFrag.bID || ((*frags)[j].bID == keyFrag.bID && (*frags)[j].parseIndex > keyFrag.parseIndex))) {
+          (*frags)[j + 1] = (*frags)[j];
+          j--;
+        }
+        (*frags)[j + 1] = keyFrag;
+      }
+
+      // Check if we have start and end fragments
+      bool hasStart = false;
+      bool hasEnd = false;
+      u64 startBID = 0;
+      u64 endBID = 0;
+      for (usz i = 0; i < frags->size(); ++i) {
+        if ((*frags)[i].status == 1) {
+          hasStart = true;
+          startBID = (*frags)[i].bID;
+        }
+        if ((*frags)[i].status == 3) {
+          hasEnd = true;
+          endBID = (*frags)[i].bID;
+        }
+      }
+
+      if (hasStart && hasEnd) {
+        // Verify all intermediate bundles are received
+        bool ready = true;
+        for (u64 b = startBID; b <= endBID; ++b) {
+          if (!_hasReceived(b)) {
+            ready = false;
+            break;
+          }
+        }
+        if (ready) {
+          String fullPayload;
+          for (usz i = 0; i < frags->size(); ++i) {
+            fullPayload += (*frags)[i].payload;
+          }
+          _reassemblyQueue.remove(key);
+
+          Packet fullP = p;
+          fullP.payload = fullPayload;
+          fullP.fragmentStatus = 0;
+          _deliverOrQueue(fullP);
+        }
+      }
+    }
+  }
+
+  void _deliverOrQueue(const Packet &p) {
+    if (p.bypassHOL || !isWindowed || p.id == 0 || p.id >= (1ULL << 60)) {
+      _dispatchPacket(p);
+      return;
+    }
+
+    u64 expected = _expectedRecvSeq.has(p.channel) ? *_expectedRecvSeq.get(p.channel) : 1;
+    if (p.id == expected) {
+      _dispatchPacket(p);
+      expected++;
+      _expectedRecvSeq.put(p.channel, expected);
+
+      auto* q = _orderQueue.get(p.channel);
+      if (q) {
+        bool foundNext = true;
+        while (foundNext) {
+          foundNext = false;
+          for (usz i = 0; i < q->size(); ++i) {
+            if ((*q)[i].id == expected) {
+              Packet nextP = (*q)[i];
+              q->splice(i, 1);
+              _dispatchPacket(nextP);
+              expected++;
+              _expectedRecvSeq.put(p.channel, expected);
+              foundNext = true;
+              break;
+            }
+          }
+        }
+      }
+    } else if (p.id > expected) {
+      auto* q = _orderQueue.get(p.channel);
+      if (!q) {
+        Array<Packet> newQ;
+        newQ.push(p);
+        _orderQueue.put(p.channel, Move(newQ));
+      } else {
+        bool duplicate = false;
+        for (usz i = 0; i < q->size(); ++i) {
+          if ((*q)[i].id == p.id) {
+            duplicate = true;
+            break;
+          }
+        }
+        if (!duplicate) {
+          q->push(p);
+        }
+      }
+    }
   }
 
   void _dispatchPacket(const Packet &p) {

@@ -1,8 +1,8 @@
 # Rho
 
-[![Docs](https://img.shields.io/badge/docs-gitbook-blue?style=flat-square)](https://xrho.gitbook.io/rho/docs/1-introduction)
+[![Docs](https://img.shields.io/badge/docs-gitbook-blue?style=flat-square)](https://xrho.gitbook.io/rho/1-introduction)
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/s7Rg4DHuej)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20%7C%20Linux%20%7C%20Bare%20Metal-orange?style=flat-square)]()
 
 **Blazing-fast, zero-copy networking primitives that run everywhere — from ESP32 microcontrollers to bare-metal servers.**
@@ -105,7 +105,7 @@ Rho is header-only. CMake automatically fetches [Xi](https://github.com/xipid/xi
 
 ## Documentation & Community
 
-📖 **[Read the Docs](https://xrho.gitbook.io/rho/docs/1-introduction)** — Architecture deep-dives, API references, and usage guides
+📖 **[Read the Docs](https://xrho.gitbook.io/rho/1-introduction)** — Architecture deep-dives, API references, and usage guides
 
 💬 **[Join the Discord](https://discord.gg/s7Rg4DHuej)** — Ask questions, share projects, contribute
 
@@ -113,4 +113,4 @@ Rho is header-only. CMake automatically fetches [Xi](https://github.com/xipid/xi
 
 ## License
 
-MIT
+Apache License 2.0
