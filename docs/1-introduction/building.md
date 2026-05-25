@@ -15,14 +15,12 @@ git clone https://github.com/xipid/rho.git
 
 # Build
 cd rho
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+./build.sh
 ```
 
 This produces:
-- `rhod` — The Rho daemon binary
-- `tests/*` — Test executables
+- `build/rhod` — The Rho daemon binary
+- `build/tests/*` — Test executables
 
 ## Using Rho in Your Project
 

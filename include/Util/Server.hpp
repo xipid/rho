@@ -46,7 +46,7 @@ public:
 
   void hook(Station& ourStation, u32 rail) {
     station = &ourStation;
-    station->addRailListener(rail, [this](Cart& c) {
+    station->addRailListener(rail, this, [this](Cart& c) {
       handleCart(c);
     });
   }
@@ -159,11 +159,11 @@ public:
   }
 
   void handleCart(Cart& c) {
-    printf("[DEBUG] Server::handleCart called! isSecure: %s, hasMeta: %s, cmd: %d, rail: %u\n",
+    /*printf("[DEBUG] Server::handleCart called! isSecure: %s, hasMeta: %s, cmd: %d, rail: %u\n",
            c.isSecure ? "true" : "false",
            c.hasMeta ? "true" : "false",
            c.meta.has(Meta::Command) ? (int)(*c.meta.get(Meta::Command))[0] : -1,
-           (unsigned int)c.rail);
+           (unsigned int)c.rail);*/
 
     if (c.isSecure) {
       // Try to route to existing tunnel by address or rail
@@ -268,6 +268,7 @@ private:
     bool isNew = false;
     if (!clientTunnel) {
       clientTunnel = new Tunnel();
+      clientTunnel->name = "ServerTunnel";
       clientTunnel->ephemeralKeypair = keypair;
       clients.push(clientTunnel);
       isNew = true;
@@ -339,8 +340,8 @@ private:
       clientTunnel->hook(*targetStation, c.rail);
     }
 
-    printf("[DEBUG] Server::_handleUpgrade: decrypted=%d, onUpgradeCallback.isValid()=%d\n",
-           decrypted, onUpgradeCallback.isValid());
+    /*printf("[DEBUG] Server::_handleUpgrade: decrypted=%d, onUpgradeCallback.isValid()=%d\n",
+           decrypted, onUpgradeCallback.isValid());*/
 
     if (onUpgradeCallback.isValid()) {
       onUpgradeCallback(firstPacket, *clientTunnel, c);

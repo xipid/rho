@@ -92,7 +92,7 @@ public:
     }
     if (station) {
       if (rail != 0) {
-        station->removeRailListener(rail);
+        station->removeRailListener(rail, this);
       } else {
         station->cartListener = Func<void(Cart&)>();
       }
@@ -158,9 +158,6 @@ public:
 
     readyTriggered = false;
     _needsUpgradeMeta = true;
-
-    // Send a dummy packet to force metadata flush immediately
-    push(Packet(String(), 1));
 
     tunnel->onPacket([this](Packet p) {
       if (!readyTriggered) {
@@ -284,13 +281,11 @@ private:
   void _ensureTunnel() {
     if (tunnel) return;
     tunnel = new Tunnel();
+    tunnel->name = "ClientTunnel";
     tunnel->ephemeralKeypair = keypair;
 
     if (rail == 0 && station) {
       rail = station->generateRail();
-      if (rail == 0) {
-        rail = 12345 + (Xi::millis() % 50000);
-      }
     }
 
     if (station) {
@@ -317,9 +312,6 @@ private:
 
     if (rail == 0 && station) {
       rail = station->generateRail();
-      if (rail == 0) {
-        rail = 12345 + (Xi::millis() % 50000);
-      }
     }
 
     // Re-hook the tunnel to the new station — same key, nonces, everything
@@ -354,7 +346,7 @@ private:
   void _setupStationListener() {
     if (!station) return;
     if (rail != 0) {
-      station->addRailListener(rail, [this](Cart& c) {
+      station->addRailListener(rail, this, [this](Cart& c) {
         handleAnnounce(c);
       });
     } else {

@@ -80,15 +80,35 @@ Take carts across entities that can't physically reach each other. `Router` buil
 
 ## Quick Start
 
+It is not quite useful to build Rho itself, it is a library to be used...
+
+If you want to build tests, or the `rhod`, do this:
+
 ```bash
 git clone https://github.com/xipid/rho.git
 cd rho
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+./build.sh
 ```
 
 Rho is header-only. CMake automatically fetches [Xi](https://github.com/xipid/xic) from GitHub if it's not found locally. For development, clone `xic` next to `rho` and CMake will use the local copy instead.
+
+
+If you want to use this `rho` library itself, you could use:
+
+```
+
+include(FetchContent)
+
+FetchContent_Declare(
+    rho
+    GIT_REPOSITORY https://github.com/xipid/rho.git
+    GIT_TAG        main
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(rho)
+
+```
 
 ---
 

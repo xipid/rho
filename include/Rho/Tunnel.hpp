@@ -189,7 +189,7 @@ public:
     unhookAll();
     hookedStation = &st;
     hookedRail = rail;
-    st.addRailListener(rail, [this](Cart& c) { this->receive(c); });
+    st.addRailListener(rail, this, [this](Cart& c) { this->receive(c); });
   }
 
   void hook(Station& st) {
@@ -234,7 +234,7 @@ public:
     hookedTargetStr = Xi::String();
     if (hookedStation) {
       if (hookedRail != 0) {
-        hookedStation->removeRailListener(hookedRail);
+        hookedStation->removeRailListener(hookedRail, this);
       } else {
         hookedStation->cartListener = Xi::Func<void(Cart&)>();
       }

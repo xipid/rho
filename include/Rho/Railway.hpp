@@ -196,7 +196,58 @@ struct Cart {
 
 class Station {
 public:
-  virtual ~Station() = default;
+  struct HookInfo {
+    Station* target = nullptr;
+    u32 rail = 0;
+    bool isRailHook = false;
+  };
+  Array<HookInfo> outboundHooks;
+  Array<Station*> inboundHookSources;
+
+  struct RailListener {
+    void* target = nullptr;
+    Func<void(Cart&)> callback;
+  };
+  Map<u32, Array<RailListener>> railListeners;
+
+  virtual ~Station() {
+    // 1. Notify all stations that hooked into us (inbound sources) that we are dying,
+    // so they don't try to clean up their outbound hooks pointing to us.
+    for (usz i = 0; i < inboundHookSources.size(); ++i) {
+      Station* src = inboundHookSources[i];
+      if (src) {
+        for (usz j = 0; j < src->outboundHooks.size(); ++j) {
+          if (src->outboundHooks[j].target == this) {
+            src->outboundHooks.splice(j, 1);
+            --j;
+          }
+        }
+      }
+    }
+    inboundHookSources.clear();
+
+    // 2. For all stations we hooked into (outbound targets), remove our listeners.
+    for (usz i = 0; i < outboundHooks.size(); ++i) {
+      Station* tgt = outboundHooks[i].target;
+      if (tgt) {
+        if (outboundHooks[i].isRailHook) {
+          tgt->removeRailListener(outboundHooks[i].rail, this);
+        } else {
+          tgt->cartListener = Func<void(Cart&)>();
+        }
+        for (usz j = 0; j < tgt->inboundHookSources.size(); ++j) {
+          if (tgt->inboundHookSources[j] == this) {
+            tgt->inboundHookSources.splice(j, 1);
+            --j;
+          }
+        }
+      }
+    }
+    outboundHooks.clear();
+
+    unhookAll();
+  }
+
   String name = "Station";
   bool isSecure = false;
   String key;
@@ -210,8 +261,6 @@ public:
 
   Func<void(Cart&)> cartListener;
   Func<void(Cart&)> cartPushListener;
-  
-  Map<u32, Array<Func<void(Cart&)>>> railListeners;
 
   Station() {
     unusedRailTracker.push(0);
@@ -235,39 +284,64 @@ public:
   void onCart(Func<void(Cart&)> cb) { cartListener = Move(cb); }
   void onCartPushed(Func<void(Cart&)> cb) { cartPushListener = Move(cb); }
 
-  void addRailListener(u32 rail, Func<void(Cart&)> cb) {
+  void addRailListener(u32 rail, void* target, Func<void(Cart&)> cb) {
     auto* arr = railListeners.get(rail);
     if (!arr) {
-      Array<Func<void(Cart&)>> newArr;
-      newArr.push(Move(cb));
+      Array<RailListener> newArr;
+      newArr.push({target, Move(cb)});
       railListeners.put(rail, Move(newArr));
     } else {
-      arr->push(Move(cb));
+      arr->push({target, Move(cb)});
     }
   }
 
-  void removeRailListener(u32 rail) {
-    railListeners.remove(rail);
+  void addRailListener(u32 rail, Func<void(Cart&)> cb) {
+    addRailListener(rail, nullptr, Move(cb));
+  }
+
+  void removeRailListener(u32 rail, void* target = nullptr) {
+    auto* arr = railListeners.get(rail);
+    if (arr) {
+      if (target == nullptr) {
+        railListeners.remove(rail);
+      } else {
+        for (usz i = 0; i < arr->size(); ++i) {
+          if ((*arr)[i].target == target) {
+            arr->splice(i, 1);
+            --i;
+          }
+        }
+        if (arr->size() == 0) {
+          railListeners.remove(rail);
+        }
+      }
+    }
   }
 
   /// Standard hook: bidirectional link between this station and another.
   void hook(Station& anotherStation) {
     anotherStation.onCart([this](Cart& c) { this->receive(c); });
     this->onCartPushed([&anotherStation](Cart& c) { anotherStation.push(c); });
+
+    outboundHooks.push({&anotherStation, 0, false});
+    anotherStation.inboundHookSources.push(this);
   }
 
   /// Rail-specific hook: only listens on and pushes to a specific rail.
   void hook(Station& anotherStation, u32 rail) {
-    anotherStation.addRailListener(rail, [this](Cart& c) { this->receive(c); });
+    anotherStation.addRailListener(rail, this, [this](Cart& c) { this->receive(c); });
     this->onCartPushed([&anotherStation, rail](Cart& c) {
-      if (c.rail == rail || rail == 0) {
+      if (c.rail == rail || rail == 0 || c.rail == 0) {
+        c.rail = rail;
         anotherStation.push(c);
       }
     });
+
+    outboundHooks.push({&anotherStation, rail, true});
+    anotherStation.inboundHookSources.push(this);
   }
 
   void unhookAll() {
-    // Unhooks are a bit complex with lambdas. In this design, just clearing listeners.
     cartListener = Func<void(Cart&)>();
     cartPushListener = Func<void(Cart&)>();
     railListeners.clear();
@@ -276,6 +350,16 @@ public:
   virtual void update() {}
   virtual void push(Cart& c) {
     if (isSecure && !c.isSecure) {
+      u32 activeRail = 0;
+      for (usz i = 0; i < outboundHooks.size(); ++i) {
+        if (outboundHooks[i].isRailHook) {
+          activeRail = outboundHooks[i].rail;
+          break;
+        }
+      }
+      if (activeRail != 0) {
+        c.rail = activeRail;
+      }
       c.hasRailNotZero = (c.rail != 0);
       String inner = c.encodeInner();
       
@@ -347,8 +431,8 @@ public:
     auto* listeners = railListeners.get(c.rail);
     if (listeners && listeners->size() > 0) {
       for (usz i = 0; i < listeners->size(); i++) {
-        if ((*listeners)[i].isValid()) {
-          (*listeners)[i](c);
+        if ((*listeners)[i].callback.isValid()) {
+          (*listeners)[i].callback(c);
         }
       }
     } else if (cartListener.isValid()) {

@@ -404,7 +404,7 @@ protected:
   }
 
   void _handleUpgrade(Packet& pkt, Tunnel& tunnel, Cart& cart) {
-    printf("[DEBUG] Gateway::_handleUpgrade called! onUpgradeCallback.isValid()=%d\n", onUpgradeCallback.isValid());
+    /*printf("[DEBUG] Gateway::_handleUpgrade called! onUpgradeCallback.isValid()=%d\n", onUpgradeCallback.isValid());*/
     RoutingEntry* result = nullptr;
 
     if (onUpgradeCallback.isValid()) {
@@ -427,7 +427,12 @@ protected:
         sessStation->hook(*targetSt, cart.rail);
       }
 
-      Resource::NumericalAddress childAddr = router.generate(address);
+      Resource::NumericalAddress childAddr = address;
+      if (cart.rail != 0) {
+        childAddr.push(cart.rail);
+      } else {
+        childAddr = router.generate(address);
+      }
       router.hook(sessStation, childAddr);
 
       TunnelSession sess;

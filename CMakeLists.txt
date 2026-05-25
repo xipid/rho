@@ -65,6 +65,8 @@ target_link_libraries(rhod PRIVATE Rho Xi)
 # ---------------------------------------------------------------------------
 # Tests — one executable per file in tests/
 # ---------------------------------------------------------------------------
+find_package(Threads REQUIRED)
+
 file(GLOB TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 
 foreach(TEST_SRC ${TEST_SOURCES})
@@ -72,7 +74,7 @@ foreach(TEST_SRC ${TEST_SOURCES})
 
   add_executable("${TEST_NAME}" "${TEST_SRC}")
 
-  target_link_libraries("${TEST_NAME}" PRIVATE Rho Xi)
+  target_link_libraries("${TEST_NAME}" PRIVATE Rho Xi Threads::Threads)
 
   set_target_properties("${TEST_NAME}" PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests"
