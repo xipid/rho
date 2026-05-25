@@ -1,6 +1,10 @@
 #ifndef XI_RHO_META_HPP
 #define XI_RHO_META_HPP 1
 
+#ifndef RHO_DEBUG
+#define RHO_DEBUG false
+#endif
+
 #include <Xi/Primitives.hpp>
 
 namespace Rho {

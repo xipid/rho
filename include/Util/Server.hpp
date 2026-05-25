@@ -159,11 +159,13 @@ public:
   }
 
   void handleCart(Cart& c) {
-    /*printf("[DEBUG] Server::handleCart called! isSecure: %s, hasMeta: %s, cmd: %d, rail: %u\n",
+#if RHO_DEBUG
+    printf("[DEBUG] Server::handleCart called! isSecure: %s, hasMeta: %s, cmd: %d, rail: %u\n",
            c.isSecure ? "true" : "false",
            c.hasMeta ? "true" : "false",
            c.meta.has(Meta::Command) ? (int)(*c.meta.get(Meta::Command))[0] : -1,
-           (unsigned int)c.rail);*/
+           (unsigned int)c.rail);
+#endif
 
     if (c.isSecure) {
       // Try to route to existing tunnel by address or rail
@@ -298,10 +300,12 @@ private:
         }
       }
       if (!decrypted) {
+#if RHO_DEBUG
         printf("[DEBUG] Server upgrade decryption failed! client ephemeral length: %zu, current key: %s, history size: %zu\n",
                clientEphemeralPtr->length(),
                keypair.publicKey.length() == 32 ? "valid" : "invalid",
                keypairHistory.size());
+#endif
       }
     } else if (acceptsInsecure) {
       clientTunnel->enableWindowing();
@@ -340,8 +344,10 @@ private:
       clientTunnel->hook(*targetStation, c.rail);
     }
 
-    /*printf("[DEBUG] Server::_handleUpgrade: decrypted=%d, onUpgradeCallback.isValid()=%d\n",
-           decrypted, onUpgradeCallback.isValid());*/
+#if RHO_DEBUG
+    printf("[DEBUG] Server::_handleUpgrade: decrypted=%d, onUpgradeCallback.isValid()=%d\n",
+           decrypted, onUpgradeCallback.isValid());
+#endif
 
     if (onUpgradeCallback.isValid()) {
       onUpgradeCallback(firstPacket, *clientTunnel, c);

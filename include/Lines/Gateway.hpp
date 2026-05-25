@@ -404,7 +404,9 @@ protected:
   }
 
   void _handleUpgrade(Packet& pkt, Tunnel& tunnel, Cart& cart) {
-    /*printf("[DEBUG] Gateway::_handleUpgrade called! onUpgradeCallback.isValid()=%d\n", onUpgradeCallback.isValid());*/
+#if RHO_DEBUG
+    printf("[DEBUG] Gateway::_handleUpgrade called! onUpgradeCallback.isValid()=%d\n", onUpgradeCallback.isValid());
+#endif
     RoutingEntry* result = nullptr;
 
     if (onUpgradeCallback.isValid()) {
